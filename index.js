@@ -1,22 +1,25 @@
+const Baileys = require('@whiskeysockets/baileys');
 const {
     default: makeWASocket,
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-    proto,
-    makeInMemoryStore
-} = require('@whiskeysockets/baileys');
+    proto
+} = Baileys;
 
 const pino = require('pino');
-const qrcode = require('qrcode-terminal'); // Para o QR aparecer no log
+const qrcode = require('qrcode-terminal');
 const config = require('./config');
 const handler = require('./handler');
 const fs = require('fs');
 
+// CORREÇÃO CRÍTICA: Tenta pegar a função de dois lugares diferentes
+const makeInMemoryStore = Baileys.makeInMemoryStore || Baileys.default?.makeInMemoryStore;
+
 // Configuração de Memória (Store)
-const store = makeInMemoryStore({ 
+const store = makeInMemoryStore ? makeInMemoryStore({ 
     logger: pino().child({ level: 'silent', stream: 'store' }) 
-});
+}) : null;
 
 // Criar diretórios necessários
 if (!fs.existsSync('./database')) fs.mkdirSync('./database');
@@ -29,19 +32,22 @@ async function connectToWhatsApp() {
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // Deixamos false para customizar a exibição
+        printQRInTerminal: false,
         auth: state,
         browser: [config.botName, 'Chrome', '1.0.0'],
         getMessage: async (key) => {
-            return (store.loadMessage(key.remoteJid, key.id) || proto.WebMessageInfo.fromObject({
+            if (store) {
+                return (await store.loadMessage(key.remoteJid, key.id))?.message || undefined;
+            }
+            return proto.WebMessageInfo.fromObject({
                 key: key,
                 message: { conversation: 'Mensagem não encontrada' },
-            }));
+            });
         }
     });
 
-    // Vincula a memória ao socket
-    store.bind(sock.ev);
+    if (store) store.bind(sock.ev);
+    
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
@@ -56,19 +62,16 @@ async function connectToWhatsApp() {
                 console.log('⚠️ Sessão desconectada. Apague a pasta ' + config.sessionName + ' e reinicie.');
             }
         } else if (connection === 'open') {
-            console.log('\n--- 🚀 STATUS DO BOT ---');
-            console.log('✅ Conectado com sucesso!');
-            console.log('📱 Nome:', config.botName);
-            console.log('👤 Dono:', config.ownerName);
-            console.log('🔧 Prefixo:', config.prefix);
-            console.log('------------------------\n');
+            console.log('\n' + '='.repeat(30));
+            console.log('🚀 BOT CONECTADO COM SUCESSO');
+            console.log(`📱 Nome: ${config.botName}`);
+            console.log(`👤 Dono: ${config.ownerName}`);
+            console.log('='.repeat(30) + '\n');
         }
 
         if (qr) {
-            console.log('\n🔐 [QR CODE] ESCANEIE ABAIXO PARA CONECTAR:');
-            // 'small: true' faz o QR Code caber perfeitamente nos logs do Render
+            console.log('\n🔐 ESCANEIE O QR CODE ABAIXO:');
             qrcode.generate(qr, { small: true });
-            console.log('Dica: Se o QR Code parecer quebrado, diminua o zoom do navegador.\n');
         }
     });
 
@@ -76,7 +79,7 @@ async function connectToWhatsApp() {
         const msg = m.messages[0];
         if (!msg.message || msg.key.remoteJid === 'status@broadcast') return;
         
-        store.upsertMessage(msg);
+        if (store) store.upsertMessage(msg.key.remoteJid, msg);
         await handler(sock, msg);
     });
 
@@ -84,4 +87,4 @@ async function connectToWhatsApp() {
 }
 
 console.log('🤖 Iniciando ' + config.botName + '...');
-connectToWhatsApp().catch(err => console.error("Erro ao iniciar bot:", err));
+connectToWhatsApp().catch(err => console.error("Erro fatal:", err));
