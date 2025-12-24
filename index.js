@@ -25,46 +25,41 @@ async function connectToWhatsApp() {
         version,
         logger: pino({ level: 'silent' }),
         auth: state,
-        // O Render exige um User-Agent de navegador real para pareamento
+        // Forçamos um navegador reconhecido para liberar o Pair Code
         browser: ["Ubuntu", "Chrome", "110.0.5481.178"], 
         printQRInTerminal: false,
         getMessage: async (key) => {
-            return { conversation: 'Mensagem não encontrada' };
+            return { conversation: 'F!NX Bot online' };
         }
     });
 
-    // --- PAREAMENTO AUTOMÁTICO (SEM PERGUNTA) ---
-    // Se não houver sessão salva, ele gera o código para o número do dono
+    // --- LÓGICA DE PAREAMENTO AUTOMÁTICO PARA RENDER ---
     if (!sock.authState.creds.registered) {
-        // Pega o número do dono do arquivo config.js
-        // Certifique-se que no config.js o ownerNumber tenha o 55...
+        // Pega o número diretamente do seu config.js
+        // IMPORTANTE: O número deve ter 55 + DDD + Numero (ex: 5511999998888)
         let phoneNumber = config.ownerNumber.replace(/[^0-9]/g, '');
-        
-        if (!phoneNumber) {
-            console.error("❌ ERRO: O número do dono (ownerNumber) não foi configurado no config.js");
-            process.exit(1);
-        }
 
-        console.log('\n' + '='.repeat(40));
-        console.log(`🔗 GERANDO CÓDIGO PARA: ${phoneNumber}`);
-        console.log('='.repeat(40));
-        
-        // Aguarda 3 segundos para o socket estabilizar antes de pedir o código
+        console.log('\n' + '═'.repeat(40));
+        console.log(`🔗 SOLICITANDO CÓDIGO PARA: ${phoneNumber}`);
+        console.log('═'.repeat(40));
+
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
-                console.log('\n' + '─'.repeat(40));
-                console.log(`👉 SEU CÓDIGO DE PAREAMENTO: ${code}`);
-                console.log('─'.repeat(40));
-                console.log('1. Abra o WhatsApp > Aparelhos Conectados');
-                console.log('2. Clique em "Conectar com número de telefone"');
-                console.log('3. Digite o código acima.\n');
-            } catch (error) {
-                console.error("Erro ao solicitar código:", error);
+                console.log('\n' + '╔════════════════════════════════════╗');
+                console.log(`║  SEU CÓDIGO:   ${code}        ║`);
+                console.log('╚════════════════════════════════════╝');
+                console.log('\nCOMO CONECTAR:');
+                console.log('1. No WhatsApp, vá em Aparelhos Conectados');
+                console.log('2. Clique em Conectar um aparelho');
+                console.log('3. Clique em "Conectar com número de telefone"');
+                console.log('4. Digite o código acima.\n');
+            } catch (err) {
+                console.error('Erro ao gerar código de pareamento:', err);
             }
-        }, 3000);
+        }, 5000); // Espera 5 segundos para garantir que o socket está pronto
     }
-    // --------------------------------------------
+    // ---------------------------------------------------
 
     if (store) store.bind(sock.ev);
     sock.ev.on('creds.update', saveCreds);
@@ -75,7 +70,7 @@ async function connectToWhatsApp() {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('\n✅ F!NX BOT CONECTADO COM SUCESSO!');
+            console.log('\n✅ F!NX BOT CONECTADO E PRONTO!');
         }
     });
 
